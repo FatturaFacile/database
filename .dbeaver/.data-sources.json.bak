@@ -1,0 +1,37 @@
+{
+	"folders": {},
+	"connections": {
+		"sqlite_jdbc-1a19705d720-135a101e29d02c39": {
+			"provider": "sqlite",
+			"driver": "sqlite_jdbc",
+			"name": "fattura-facile.sqlite",
+			"save-password": true,
+			"configuration": {
+				"database": "C:\\dev\\fattura-facile\\database\\fattura-facile.sqlite",
+				"url": "jdbc:sqlite:C:\\dev\\fattura-facile\\database\\fattura-facile.sqlite",
+				"configurationType": "MANUAL",
+				"type": "dev"
+			}
+		}
+	},
+	"connection-types": {
+		"dev": {
+			"name": "Development",
+			"color": "255,255,255",
+			"colorDark": "255,255,255",
+			"description": "Regular development database",
+			"auto-commit": true,
+			"confirm-execute": false,
+			"confirm-data-change": false,
+			"smart-commit": false,
+			"smart-commit-recover": true,
+			"auto-close-transactions": true,
+			"close-transactions-period": 1800,
+			"auto-close-connections": true,
+			"close-connections-period": 14400,
+			"security": {
+				"permission-restrictions": []
+			}
+		}
+	}
+}

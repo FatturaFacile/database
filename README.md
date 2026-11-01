@@ -1,10 +1,18 @@
-# database
-Database
-
-
 # Fattura Facile ERP — Enterprise Database Schema & Architecture
 
 This document provides the authoritative architectural schema breakdown and multi-tenancy reference for the **Fattura Facile** enterprise ERP database. It serves as the companion analysis to [`docs/database-schema.sql`](file:///c:/dev/fattura-facile/web-api/docs/database-schema.sql), which contains the complete, topologically-ordered SQL DDL schema ready for native import into **DBeaver Community Edition** (and other ER modeling tools).
+
+---
+
+## Documentation Navigation & Architecture Library
+
+| Resource | Path | Description |
+| :--- | :--- | :--- |
+| **System Architecture Guide** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Multi-tenancy isolation models, UUIDv7 conventions, CQRS read/write splitting, and event streaming. |
+| **Migration & Versioning Guidelines** | [`MIGRATIONS.md`](./MIGRATIONS.md) | Up/down workflow, zero-downtime expand/contract patterns, and production deployment checklists. |
+| **Complete Schema Reference Index** | [`docs/SCHEMA_INDEX.md`](./docs/SCHEMA_INDEX.md) | Master directory linking all 416 database tables across 17 modular architectural domains. |
+| **Complete Relational Diagram** | [`main.md`](./main.md) | Authoritative Mermaid Class Diagram defining all 416 tables and 1,062 foreign key relationships. |
+| **Modular Domain Dictionaries** | [`docs/modules/`](./docs/modules/) | Field-level data dictionaries, data types, nullability, defaults, and foreign keys per module. |
 
 ---
 
@@ -18,26 +26,29 @@ This document provides the authoritative architectural schema breakdown and mult
 - **Fail-Closed Behavior**: When an operation executes without an active tenant context, `TenantScope` injects `WHERE 1 = 0` on operational tables to prevent accidental cross-tenant data exposure.
 
 ### 1.2 Table Categorization & Scoping Rules
-The 416 database tables are divided into three distinct operational categories:
+The 416 database tables are divided into three distinct operational categories based on column-level nullability and multi-tenant scoping semantics:
 
 1. **System / Global Tables (29 Tables)**:
-   - Tables that manage authentication, infrastructure, job queues, system logs, and global tenants.
+   - Tables managing authentication, background jobs, caching, system configuration, global tenants, and parent-linked 1:1 or dependent item rows.
    - Contain **no** `tenant_id` column.
-   - Examples: `tenants`, `users`, `tenant_user`, `personal_access_tokens`, `cache`, `sessions`, `jobs`, `failed_jobs`, `transactional_inbox`, `transactional_outbox`, `transactional_outbox_archive`, `enterprise_feature_flags`, `tenant_backups`.
+   - Subdivided into:
+     - *Infrastructural System Tables (14 tables)*: `tenants`, `users`, `cache`, `cache_locks`, `sessions`, `jobs`, `failed_jobs`, `job_batches`, `password_reset_tokens`, `personal_access_tokens`, `exchange_rates`, `lookup_categories`, `document_sequences`, `translations`.
+     - *Dependent Child Items Scoped Via Parent FK (15 tables)*: `contact_addresses`, `discount_policy_rules`, `billing_schedule_items`, `bom_items`, `expense_items`, `general_ledger_lines`, `goods_receipt_items`, `invoice_qr_bill_data`, `invoice_sdi_metadata`, `payment_term_installments`, `pos_sale_items`, `price_list_items`, `production_order_stages`, `purchase_order_items`, `subscription_items`, `work_order_lines`.
+   - Scoping Behavior: Unscoped in Eloquent; child tables derive tenant context transitively through their primary parent foreign key.
 
-2. **Tenant-Scoped Tables (351 Tables)**:
-   - High-volume transactional and master data entities strictly owned by a specific tenant.
-   - Contain `tenant_id VARCHAR(36)` with `FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE`.
+2. **Tenant-Scoped Tables (274 Tables)**:
+   - High-volume transactional, operational, and master entities strictly owned by a specific organization.
+   - Contain `tenant_id VARCHAR(36) NOT NULL` with `FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE`.
    - Automatically filtered by `TenantScope::apply()` with `WHERE tenant_id = ?`.
-   - Examples: `invoices`, `invoice_items`, `quotes`, `sales_orders`, `purchase_orders`, `contacts`, `warehouses`, `stock_items`, `projects`, `eam_fixed_assets`, `esm_tickets`, `hr_employees`, `sub_subscriptions`.
+   - Examples: `invoices`, `invoice_items`, `quotes`, `sales_orders`, `purchase_orders`, `contacts`, `warehouses`, `stock_items`, `projects`, `eam_fixed_assets`, `esm_tickets`, `hr_employees`, `sub_subscriptions`, `transactional_outbox`.
 
-3. **Shared Reference Lookup Tables (36 Tables)**:
-   - Catalogs and classifications shared across all tenants with support for tenant-specific overrides.
-   - Contain a **nullable** `tenant_id VARCHAR(36)`.
-   - If `tenant_id IS NULL`, the record represents a system-wide baseline (e.g. standard Italian VAT codes, ISO currencies, default payment terms).
-   - If `tenant_id` is populated, the record represents a custom tenant definition.
+3. **Shared Reference Lookup & Config Tables (113 Tables)**:
+   - Catalogs, standard classification registers, and baseline templates that support system-wide presets with tenant-specific custom overrides.
+   - Contain `tenant_id VARCHAR(36) NULL` (nullable).
+   - If `tenant_id IS NULL`, the row represents an official system baseline (e.g., standard Italian DPR 633/72 VAT codes, ISO currencies, standard chart of accounts).
+   - If `tenant_id` is populated, the row represents a customized or private override for that specific organization.
    - `TenantScope` executes: `WHERE (tenant_id = ? OR tenant_id IS NULL)`.
-   - Examples: `vat_codes`, `payment_terms`, `currencies`, `countries`, `regions`, `units_of_measure`, `expense_categories`, `document_statuses`, `workflow_states`.
+   - Examples: `vat_codes`, `payment_terms`, `currencies`, `countries`, `regions`, `units_of_measure`, `chart_of_accounts`, `bank_accounts`, `expense_categories`, `document_statuses`, `workflow_states`.
 
 ### 1.3 Key & Identifier Conventions
 - **Primary Keys**: Universally **UUIDv7** strings (`VARCHAR(36)`), managed by `Enterprise\Foundation\Concerns\HasUuidV7`. This eliminates auto-increment collision risks during tenant database shard splits and backup/restore cycles.
@@ -114,14 +125,14 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `bank_statements` | `BankStatement` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, content_hash); IDX(tenant_id, source_format); IDX(tenant_id, status) |
 | `bank_transactions` | `BankTransaction` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, booking_date) |
 | `billable_activities` | `BillableActivity` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
-| `billing_schedule_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `billing_schedule_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `billing_schedules` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, schedule_number) |
 | `bills_of_materials` | `BillOfMaterial` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
-| `bom_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `bom_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `business_calendar_holidays` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(business_calendar_id, holiday_date) |
 | `business_calendars` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, is_default) |
-| `cache` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (key) | INDEX(tenant_id) |
-| `cache_locks` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (key) | INDEX(tenant_id) |
+| `cache` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (key) | None (No tenant_id) |
+| `cache_locks` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (key) | None (No tenant_id) |
 | `carbon_ledger` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `cash_forecast_lines` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, projected_date, flow_type) |
 | `cash_forecasts` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, calculation_date) |
@@ -164,7 +175,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `delivery_note_items` | `DeliveryNoteItem` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `delivery_notes` | `DeliveryNote` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, ddt_number); IDX(tenant_id, contact_id); IDX(tenant_id, date) |
 | `discount_policies` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, code) |
-| `discount_policy_rules` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `discount_policy_rules` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `document_emails` | `DocumentEmail` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(emailable_type, emailable_id) |
 | `document_events` | `DocumentEvent` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(eventable_type, eventable_id) |
 | `document_sequences` | `DocumentSequence` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, document_type, fiscal_year) |
@@ -218,7 +229,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `expense_attachments` | `ExpenseAttachment` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, expense_id) |
 | `expense_categories` | `ExpenseCategory` | Shared Reference Lookup | `tenant_id (nullable)` | UUID (v7/v4 string) | UNIQUE(code) |
 | `expense_category_translations` | `ExpenseCategoryTranslation` | Shared Reference Lookup | `tenant_id (nullable)` | UUID (v7/v4 string) | UNIQUE(expense_category_id, locale) |
-| `expense_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `expense_items` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `expense_reports` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, user_id, status) |
 | `expenses` | `Expense` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, expense_number); IDX(tenant_id, accounting_exported_at); IDX(tenant_id, category_id) |
 | `failed_jobs` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | UNIQUE(uuid); IDX(connection, queue, failed_at) |
@@ -230,8 +241,8 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `fx_positions` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, currency, as_of_date) |
 | `fx_revaluations` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `general_ledger_entries` | `GeneralLedgerEntry` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, entry_number); IDX(reference_type, reference_id) |
-| `general_ledger_lines` | `GeneralLedgerLine` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
-| `goods_receipt_items` | `GoodsReceiptItem` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `general_ledger_lines` | `GeneralLedgerLine` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
+| `goods_receipt_items` | `GoodsReceiptItem` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `goods_receipts` | `GoodsReceipt` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, receipt_number) |
 | `hr_attendance_records` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, employee_id, work_date) |
 | `hr_business_units` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, code) |
@@ -269,8 +280,8 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `invoice_sdi_metadata` | `InvoiceSdiMetadata` | System / Global | `invoice_id (parent tenant)` | UUID (v7/v4 string) | UNIQUE(invoice_id) |
 | `invoice_service_reports` | `InvoiceServiceReport` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, service_report_id); IDX(tenant_id, invoice_id) |
 | `invoices` | `Invoice` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, invoice_number); IDX(tenant_id, contact_id); IDX(tenant_id, date) |
-| `job_batches` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
-| `jobs` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `job_batches` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
+| `jobs` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `journal_batches` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, company_id, batch_number) |
 | `journal_entries` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, company_id, entry_number) |
 | `journal_lines` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
@@ -313,7 +324,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `notification_type_translations` | `NotificationTypeTranslation` | Shared Reference Lookup | `tenant_id (nullable)` | UUID (v7/v4 string) | UNIQUE(notification_type_id, locale) |
 | `notification_types` | `NotificationType` | Shared Reference Lookup | `tenant_id (nullable)` | UUID (v7/v4 string) | UNIQUE(code) |
 | `passive_invoices` | `PassiveInvoice` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, document_hash); IDX(tenant_id, date); IDX(tenant_id, date) |
-| `password_reset_tokens` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (email) | INDEX(tenant_id) |
+| `password_reset_tokens` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (email) | None (No tenant_id) |
 | `payment_approvals` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `payment_batches` | `PaymentBatch` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `payment_executions` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
@@ -331,7 +342,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `personal_access_tokens` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | UUID (v7/v4 string) | UNIQUE(token); IDX(tokenable_type, tokenable_id) |
 | `portal_access_tokens` | `PortalAccessToken` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(token_hash); IDX(scope_type, scope_id); IDX(tenant_id, contact_id) |
 | `portal_activity_logs` | `PortalActivityLog` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, action); IDX(tenant_id, contact_id); IDX(tenant_id, created_at) |
-| `pos_sale_items` | `PosSaleItem` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `pos_sale_items` | `PosSaleItem` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `pos_sales` | `PosSale` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `pos_sessions` | `PosSession` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `pos_terminals` | `PosTerminal` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, terminal_code) |
@@ -340,7 +351,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `price_lists` | `PriceList` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, name); IDX(tenant_id, is_default) |
 | `product_brands` | `ProductBrand` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, name) |
 | `product_categories` | `ProductCategory` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, name) |
-| `production_order_stages` | `ProductionOrderStage` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `production_order_stages` | `ProductionOrderStage` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `production_orders` | `ProductionOrder` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, order_number) |
 | `products` | `Product` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, sku) |
 | `profit_centers` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, company_id, code) |
@@ -378,7 +389,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `project_timesheets` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(project_id, user_id, work_date) |
 | `project_variation_requests` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
 | `projects` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, project_number); IDX(tenant_id, status, project_manager_user_id) |
-| `purchase_order_items` | `PurchaseOrderItem` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `purchase_order_items` | `PurchaseOrderItem` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `purchase_order_lines` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(purchase_order_id, is_closed) |
 | `purchase_orders` | `PurchaseOrder` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, order_number); IDX(tenant_id, date); IDX(tenant_id, status) |
 | `purchase_receipt_lines` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | INDEX(tenant_id) |
@@ -413,7 +424,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `service_report_lines` | `ServiceReportLine` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, item_id); IDX(tenant_id, line_type_id); IDX(tenant_id, service_report_id) |
 | `service_report_signatures` | `ServiceReportSignature` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, service_report_id) |
 | `service_reports` | `ServiceReport` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, report_number); IDX(tenant_id, contact_id); IDX(tenant_id, project_id) |
-| `sessions` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (id) | INDEX(tenant_id) |
+| `sessions` | `Enterprise Model (Dynamic/Module)` | System / Global | `None` | VARCHAR(255) (id) | None (No tenant_id) |
 | `stock_item_categories` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, code) |
 | `stock_items` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, sku) |
 | `stock_lots` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, stock_item_id, lot_number) |
@@ -447,7 +458,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `sub_usage_aggregations` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(subscription_item_id, period_start, period_end) |
 | `sub_usage_events` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, idempotency_key) |
 | `sub_usage_metrics` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, metric_code) |
-| `subscription_items` | `SubscriptionItem` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `subscription_items` | `SubscriptionItem` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `subscription_runs` | `SubscriptionRun` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(subscription_id, period_start) |
 | `subscriptions` | `Subscription` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, subscription_number); IDX(status, next_billing_date) |
 | `supplier_catalogs` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, supplier_id, supplier_part_number) |
@@ -464,7 +475,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `task_statuses` | `TaskStatus` | Shared Reference Lookup | `tenant_id (nullable)` | UUID (v7/v4 string) | UNIQUE(code) |
 | `tenant_backups` | `TenantBackup` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, status, completed_at) |
 | `tenant_user` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, user_id) |
-| `tenants` | `Tenant` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `tenants` | `Tenant` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `three_way_match_logs` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, match_status, evaluated_at) |
 | `ticket_messages` | `TicketMessage` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, is_internal); IDX(tenant_id, ticket_id) |
 | `tickets` | `Ticket` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(tenant_id, assigned_to_user_id); IDX(tenant_id, client_id); IDX(tenant_id, status) |
@@ -488,7 +499,7 @@ The following matrix details all 416 database tables, their associated Eloquent 
 | `warehouse_racks` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(warehouse_aisle_id, code) |
 | `warehouse_zones` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(warehouse_id, code) |
 | `warehouses` | `Warehouse` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, code) |
-| `work_order_lines` | `WorkOrderLine` | System / Global | `None` | UUID (v7/v4 string) | INDEX(tenant_id) |
+| `work_order_lines` | `WorkOrderLine` | System / Global | `None` | UUID (v7/v4 string) | None (No tenant_id) |
 | `work_orders` | `WorkOrder` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | UNIQUE(tenant_id, work_order_number); IDX(tenant_id, client_id); IDX(tenant_id, date) |
 | `workflow_audit_entries` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(workflow_instance_id, created_at); IDX(tenant_id, event_type) |
 | `workflow_comments` | `Enterprise Model (Dynamic/Module)` | Tenant-Scoped | `tenant_id` | UUID (v7/v4 string) | IDX(workflow_instance_id, created_at) |
