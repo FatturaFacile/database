@@ -32,3 +32,6 @@ auth.json
 
 # Generated client SDKs (scripts/generate-clients.sh)
 /clients/
+
+.claude/settings.local.json
+.claude/*.local.md
