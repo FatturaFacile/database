@@ -1,15 +1,18 @@
-# Agent Optimization & Execution Guidelines
+# Copilot instructions
 
-## Context & Token Saving Rules
-1. **Never read whole files unless strictly necessary:** Prefer inspecting interfaces, declarations, and method signatures over entire multi-thousand-line implementations.
-2. **Concise diffs only:** When modifying code, emit only the updated methods or focused contextual diffs. Do not reproduce the entire source file.
-3. **No conversational padding:** Do not start answers with polite filler phrases ("Sure, I can help with that", "Certainly!"). Start directly with the code solution, patch, or command.
-4. **No post-explanation unsolicited text:** Do not explain standard C# / PHP syntax or architectural concepts unless explicitly asked with "explain" or "why".
+Project: Schema documentation, SQL DDL and a SQLite sample (the live schema is defined by the web-api migrations).
 
-## Architectural Constraints
-- Follow Clean Architecture and CQRS:
-  - Domain: pure business logic, entities, value objects.
-  - Application: MediatR/CQRS handlers, DTOs, interfaces.
-  - Infrastructure: EF Core, persistence, external adapters.
-  - Presentation: Thin controllers / minimal endpoints / UI components.
-- Do not add external third-party dependencies unless strictly required.
+Full cross-tool rules: `.ai/rules/project.md` (read it first).
+
+## Essentials
+
+- Write all code, comments, commit messages and documentation in English.
+- Fix every error you meet, also outside the request.
+- Never add dependencies or secrets; follow the sibling files of the area you change.
+- The web-api migrations are the source of truth: never invent tables or columns that do not exist there.
+- Migrations are additive (no drop or rename of existing columns or tables); document expand/contract steps in `MIGRATIONS.md`.
+- Keep `ARCHITECTURE.md`, `README.md` and `docs/` consistent with each other.
+
+## Commands
+
+- No build step: documents and SQL files are reviewed by hand.
