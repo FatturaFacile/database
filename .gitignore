@@ -32,3 +32,22 @@ auth.json
 
 # Generated client SDKs (scripts/generate-clients.sh)
 /clients/
+
+# Editor / assistant tool configuration (local only)
+/CLAUDE.md
+/AGENTS.md
+/.claude/
+/.claudeignore
+/.agy
+/.agyignore
+/.ai
+/.aiignore
+/.antigravity
+/.codex
+/.copilotignore
+/.cursor/
+/.cursorignore
+/.cursorrules
+/.gemini/
+/.geminiignore
+/.windsurfrules
