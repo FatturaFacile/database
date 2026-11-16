@@ -2,8 +2,6 @@
 
 Project: Schema documentation, SQL DDL and a SQLite sample (the live schema is defined by the web-api migrations).
 
-Full cross-tool rules: `.ai/rules/project.md` (read it first).
-
 ## Essentials
 
 - Write all code, comments, commit messages and documentation in English.
