@@ -33,6 +33,13 @@ auth.json
 # Generated client SDKs (scripts/generate-clients.sh)
 /clients/
 
+.claude/settings.local.json
+.claude/*.local.md
+# AI tools: local state and scratch files
+.claude/worktrees/
+.sandbox/
+*.tmp
+
 # Editor / assistant tool configuration (local only)
 /CLAUDE.md
 /AGENTS.md
