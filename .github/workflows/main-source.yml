@@ -4,7 +4,7 @@ name: main-source
 # Uses pull_request_target and never checks out or runs PR code.
 on:
   pull_request_target:
-    branches: [main]
+    branches: [tmp-ms-base]
     types: [opened, reopened, synchronize, edited]
 
 permissions:
