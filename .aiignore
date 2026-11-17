@@ -1,0 +1,42 @@
+# Universal AI Ignore Rules
+.git/
+*.log
+*.sqlite-journal
+*.sqlite-wal
+*.tmp
+*.bak
+*.swp
+*.patch
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.cert
+auth.json
+
+# IDE & Editor caches
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# Build & Dependency Artifacts (if present in submodules or linked environments)
+vendor/
+node_modules/
+dist/
+build/
+coverage/
+.phpunit.cache/
+.phpunit.result.cache
+
+# Framework temporary storage
+storage/framework/
+storage/logs/
+bootstrap/cache/

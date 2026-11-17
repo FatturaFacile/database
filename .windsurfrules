@@ -1,0 +1,6 @@
+# Windsurf Rules
+
+All agents must follow the canonical instructions and multi-tenancy rules in AGENTS.md.
+
+- Refer to AGENTS.md for database schema guidelines, multi-tenancy standards, and dual-driver (SQLite / PostgreSQL) rules.
+- Run SQLite integrity verification: `sqlite3 fattura-facile.sqlite "PRAGMA integrity_check;"`
