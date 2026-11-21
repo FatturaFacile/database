@@ -1,13 +1,5 @@
 ---
-description: Project architectural standards, multi-tenancy rules, and verification
-globs: **/*
+description: Canonical project governance pointer
 alwaysApply: true
 ---
-
-# Project Guidelines
-
-Refer directly to [AGENTS.md](../../AGENTS.md) for full project rules, schema classifications, and commands.
-
-- **Stack**: Database schema definitions, documentation, and SQLite reference model.
-- **Multi-Tenancy**: Single database multi-tenancy using `tenant_id` column discriminator.
-- **Verification**: Run `sqlite3 fattura-facile.sqlite "PRAGMA integrity_check;"` when inspecting database assets.
+Follow [AGENTS.md](../../AGENTS.md) as the single source of truth; read targeted ranges and emit minimal diffs only.
