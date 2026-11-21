@@ -1,42 +1,41 @@
-# Universal AI Ignore Rules
-.git/
-*.log
-*.sqlite-journal
-*.sqlite-wal
-*.tmp
-*.bak
-*.swp
-*.patch
-
-# Environment & Secrets
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.pfx
-*.cert
-auth.json
-
-# IDE & Editor caches
-.idea/
-.vscode/
-.vs/
-*.suo
-*.user
-.DS_Store
-Thumbs.db
-
-# Build & Dependency Artifacts (if present in submodules or linked environments)
+# Build & Dependencies
+bin/
+obj/
 vendor/
 node_modules/
 dist/
 build/
+.dart_tool/
+.astro/
+.angular/
 coverage/
-.phpunit.cache/
-.phpunit.result.cache
 
-# Framework temporary storage
-storage/framework/
-storage/logs/
-bootstrap/cache/
+# Lockfiles & Generated Code
+package-lock.json
+pnpm-lock.yaml
+composer.lock
+pubspec.lock
+*.Designer.cs
+*.g.cs
+*.g.dart
+*.freezed.dart
+*.min.js
+*.min.css
+*.map
+
+# Databases, Logs & Temp Artifacts
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.log
+*.tmp
+_r.php
+run*.json
+dbg.done
+
+# Git & Worktrees
+.git/
+.worktrees/
+*-wt*/
