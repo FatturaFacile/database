@@ -1,17 +1,96 @@
-# Fattura Facile ERP — Enterprise Database Schema & Architecture
+# FatturaFacile Database
 
-This document provides the authoritative architectural schema breakdown and multi-tenancy reference for the **Fattura Facile** enterprise ERP database. It serves as the companion analysis to [`docs/database-schema.sql`](file:///c:/dev/fattura-facile/web-api/docs/database-schema.sql), which contains the complete, topologically-ordered SQL DDL schema ready for native import into **DBeaver Community Edition** (and other ER modeling tools).
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Reference documentation and a reference SQLite schema for the [FatturaFacile](https://github.com/FatturaFacile/FatturaFacile) ERP database: 416 tables in 17 domains, with multi-tenancy rules, key conventions, an ER diagram and field-level data dictionaries.
+
+> **This repository is documentation and a reference copy only.** It contains no application code and no migrations. The live schema is defined by the Laravel migrations in [`web-api`](https://github.com/FatturaFacile/web-api); this repository mirrors it, so if the two differ, `web-api` wins.
+
+## Overview
+
+- **Database engines:** PostgreSQL 16+ in production and CI; SQLite for local inspection (the SQL is kept compatible with both).
+- **Multi-tenancy:** one shared database with a `tenant_id` discriminator column, enforced in the API by a global scope. Details in section 1 below.
+- **Keys:** UUIDv7 string primary keys (a few documented exceptions).
+- **Languages:** translation tables carry `it`, `en`, `de` and `fr`.
+
+## Requirements
+
+None to read the documentation. To inspect the reference database you need any SQLite 3.45+ client (the `sqlite3` CLI, [DBeaver](https://dbeaver.io), DB Browser for SQLite). Mermaid diagrams render on GitHub.
+
+## Getting started
+
+```bash
+git clone -b dev https://github.com/FatturaFacile/database.git
+cd database
+sqlite3 fattura-facile.sqlite ".tables"        # list the 416 tables
+sqlite3 fattura-facile.sqlite ".schema invoices"
+```
+
+`fattura-facile.sqlite` contains the schema only, no data. Always run `PRAGMA foreign_keys = ON;` in your session.
+
+## Configuration
+
+None. No environment variables.
+
+## Testing and checks
+
+There is no automated test suite. Before changing the reference database or the documents, run:
+
+```bash
+sqlite3 fattura-facile.sqlite "PRAGMA integrity_check;"      # must print: ok
+sqlite3 fattura-facile.sqlite "PRAGMA foreign_key_check;"    # must print nothing
+```
+
+and check that relative Markdown links still resolve and that Mermaid blocks still render. Keep this README, `ARCHITECTURE.md`, `main.md`, `docs/SCHEMA_INDEX.md` and `docs/modules/*.md` aligned when the schema changes.
+
+## CI and branching
+
+- `dev` is the default branch. Open pull requests against `dev`. `main` only receives pull requests from `dev` (the `main-source` workflow enforces it).
+- Workflows: `main-source` (checks the source branch of pull requests to `main`), `Auto-Merge Dependabot` and `Telegram Notifications`. There is no build or deployment, and no linter.
+
+## Project structure
+
+```text
+fattura-facile.sqlite   # reference schema, 416 tables, 696 foreign keys, no data
+main.md                 # Mermaid class diagram of all tables and relationships
+ARCHITECTURE.md         # tenancy, UUIDv7, CQRS read/write split, event streaming
+MIGRATIONS.md           # migration workflow, expand/contract, deployment checklist
+docs/SCHEMA_INDEX.md    # index of the 416 tables by domain
+docs/modules/           # one data dictionary per domain (17 files)
+.dbeaver/               # DBeaver project settings for the reference SQLite file
+```
+
+## Related repositories
+
+| Repository | Relation |
+| :--- | :--- |
+| [`web-api`](https://github.com/FatturaFacile/web-api) | Owns the schema (migrations) and the models |
+| [`desktop`](https://github.com/FatturaFacile/desktop) | Offline client with its own local SQLite database |
+| [`mobile`](https://github.com/FatturaFacile/mobile) | Offline client with a local SQLite cache |
+| [`FatturaFacile`](https://github.com/FatturaFacile/FatturaFacile) | Organization overview and repository map |
+
+## Documentation
+
+Project wiki: [FatturaFacile/FatturaFacile wiki](https://github.com/FatturaFacile/FatturaFacile/wiki). The architecture reference follows.
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
-## Documentation Navigation & Architecture Library
+# Architecture and schema reference
+
+---
+
+## Documentation navigation
 
 | Resource | Path | Description |
 | :--- | :--- | :--- |
 | **System Architecture Guide** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Multi-tenancy isolation models, UUIDv7 conventions, CQRS read/write splitting, and event streaming. |
 | **Migration & Versioning Guidelines** | [`MIGRATIONS.md`](./MIGRATIONS.md) | Up/down workflow, zero-downtime expand/contract patterns, and production deployment checklists. |
 | **Complete Schema Reference Index** | [`docs/SCHEMA_INDEX.md`](./docs/SCHEMA_INDEX.md) | Master directory linking all 416 database tables across 17 modular architectural domains. |
-| **Complete Relational Diagram** | [`main.md`](./main.md) | Authoritative Mermaid Class Diagram defining all 416 tables and 1,062 foreign key relationships. |
+| **Complete Relational Diagram** | [`main.md`](./main.md) | Mermaid class diagram of all 416 tables and their relationships. |
 | **Modular Domain Dictionaries** | [`docs/modules/`](./docs/modules/) | Field-level data dictionaries, data types, nullability, defaults, and foreign keys per module. |
 
 ---
@@ -59,38 +138,18 @@ The 416 database tables are divided into three distinct operational categories b
 
 ---
 
-## 2. DBeaver Community Edition — Native ER Diagram Import Guide
+## 2. DBeaver Community Edition — ER diagram from the reference SQLite file
 
-The schema file [`docs/database-schema.sql`](file:///c:/dev/fattura-facile/web-api/docs/database-schema.sql) is topologically organized so that DBeaver Community Edition automatically resolves all primary-foreign key connectors into an interactive relational graph without manual line wiring.
+DBeaver Community Edition can render an interactive ER diagram directly from `fattura-facile.sqlite`, with no manual wiring of the foreign keys.
 
-```mermaid
-flowchart LR
-    A["Open DBeaver CE"] --> B["Connect to Database
-(PostgreSQL / MySQL / SQLite)"]
-    B --> C["Open SQL Editor
-(F3 or Alt + X)"]
-    C --> D["Execute docs/database-schema.sql"]
-    D --> E["Double-Click Schema in Navigator"]
-    E --> F["Click 'ER Diagram' Tab"]
-```
+1. **Open the project or create a connection:** open the repository folder as a DBeaver project (it includes `.dbeaver/` settings), or create a new **SQLite** connection and point it to `fattura-facile.sqlite`.
+2. **Open the diagram:** in the **Database Navigator**, expand the connection, double-click the database (or `main` schema) and switch to the **ER Diagram** tab. DBeaver reads the 696 foreign keys of the file and draws the graph with Crow's Foot connectors.
+3. **Recommended settings:**
+   - **Layout**: right-click the canvas, **Layout > Hierarchical Layout** or **Orthogonal**.
+   - **Grouping**: select tables by domain (for example Sales, Procurement, MRP, ESM), right-click, **Create Logical Table Group**.
+   - **Detail level**: switch between *Attributes (Full)*, *Keys Only* and *Entity Names Only* depending on the zoom.
 
-### Step-by-Step Instructions:
-1. **Connect to Scratch or Development Database**:
-   - Open DBeaver Community Edition.
-   - Create a new connection to your target engine (e.g. PostgreSQL `127.0.0.1:5432/erp_db`, or a clean SQLite / MySQL scratch schema).
-2. **Open and Run the SQL Schema File**:
-   - In DBeaver, press `Ctrl + O` (or **File > Open File**) and choose `docs/database-schema.sql`.
-   - Alternatively, open an SQL Editor (`F3`) and paste the file content.
-   - Run the script by pressing `Alt + X` (**Execute SQL Script**).
-   - The script creates 416 tables in topological order, establishes 696 foreign key constraints, declares composite unique constraints, and creates multi-tenant performance indexes.
-3. **Generate & View the Interactive ER Diagram**:
-   - In the **Database Navigator** pane on the left, navigate to your database and double-click the **public** schema (or root database folder).
-   - In the central main window, switch to the **"ER Diagram"** tab.
-   - DBeaver will automatically parse the 696 foreign keys and render the complete enterprise graph with Crow's Foot cardinality connectors.
-4. **Recommended DBeaver ER Diagram Settings**:
-   - **Layout**: Right-click canvas -> **Layout > Hierarchical Layout** or **Orthogonal**.
-   - **Grouping**: Select tables by domain (e.g. Sales, Procurement, MRP, ESM) -> Right-click -> **Create Logical Table Group**.
-   - **Detail Level**: Toggle between *Attributes (Full)*, *Keys Only*, or *Entity Names Only* depending on zoom scale.
+The same relationships are drawn in Mermaid in [`main.md`](./main.md).
 
 ---
 
@@ -648,8 +707,7 @@ Our audit revealed **60 unique constraints** across tenant-scoped and reference 
 
 ## 5. Summary & Verification Checklist
 
-- [x] **Executable DDL**: [`docs/database-schema.sql`](file:///c:/dev/fattura-facile/web-api/docs/database-schema.sql) generated with 416 tables, 696 foreign keys, 1,348 constraints, and 0 circular dependencies.
-- [x] **Topological Order**: Parents created strictly before children, drop clauses executed in reverse dependency order.
-- [x] **Dialect Optimization**: Standard PostgreSQL 16+ DDL with MySQL ANSI_QUOTES and SQLite compatibility.
+- [x] **Reference database**: [`fattura-facile.sqlite`](./fattura-facile.sqlite) holds 416 tables and 696 foreign keys (schema only).
+- [x] **Dialects**: the schema is kept compatible with PostgreSQL 16+ and SQLite.
 - [x] **Multi-Tenancy Audit**: All 416 tables indexed and categorized across System, Tenant, and Shared catalogs.
 - [x] **Actionable Remediation**: 34 missing tenant indexes and 60 non-scoped unique constraints documented for engineering backlog.
